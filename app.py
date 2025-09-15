@@ -1,5 +1,6 @@
 import os
-import requests
+import aiohttp
+import asyncio
 from telegram import Update
 from telegram.error import TelegramError
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -32,7 +33,7 @@ HI_MSG = process_env_string(os.getenv("HI_MSG", "Добро пожаловать
 ERR_MSG = process_env_string(os.getenv("ERR_MSG", "Извините, сейчас не могу ответить. Попробуйте позже."))
 
 
-def call_ai(message: str, parent_message_id: str = ""):
+async def call_ai(message: str, parent_message_id: str = ""):
     try:
         url = f"https://api.timeweb.cloud/api/v1/cloud-ai/agents/{AGENT_ID}/call"
         payload = {
@@ -44,14 +45,17 @@ def call_ai(message: str, parent_message_id: str = ""):
             "Content-Type": "application/json"
         }
 
-        response = requests.post(url, json=payload, headers=headers, timeout=120)
-        response.raise_for_status()
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, headers=headers, timeout=300) as response:
+                response.raise_for_status()
+                data = await response.json()
+                return data["id"], data["message"]
 
-        data = response.json()
-        return data["id"], data["message"]
-
-    except requests.exceptions.RequestException as e:
+    except aiohttp.ClientError as e:
         logger.error(f"Ошибка запроса к AI API: {e}", exc_info=True)
+        return None, None
+    except asyncio.TimeoutError:
+        logger.error(f"Таймаут запроса к AI API", exc_info=True)
         return None, None
     except Exception as e:
         logger.error(f"Неизвестная ошибка при вызове AI: {e}", exc_info=True)
@@ -91,7 +95,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_message = update.message.text
     parent_message_id = context.user_data.get("last_message_id", "")
 
-    msg_id, ai_response = call_ai(user_message, parent_message_id)
+    msg_id, ai_response = await call_ai(user_message, parent_message_id)
 
     if ai_response:
         context.user_data["last_message_id"] = msg_id
