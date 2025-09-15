@@ -1,10 +1,12 @@
 import os
 import aiohttp
 import asyncio
+import logging
+from collections import defaultdict
 from telegram import Update
 from telegram.error import TelegramError
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import logging
+
 
 
 logging.basicConfig(
@@ -12,12 +14,6 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-
-
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-AI_TOKEN = os.getenv("AI_API_KEY")
-AGENT_ID = os.getenv("AGENT_ID")
-MAX_MSG_LEN = 4096
 
 
 def process_env_string(s):
@@ -29,9 +25,15 @@ def process_env_string(s):
     return s.replace('\\n', '\n').replace('\\t', '\t')
 
 
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+AI_TOKEN = os.getenv("AI_API_KEY")
+AGENT_ID = os.getenv("AGENT_ID")
+MAX_MSG_LEN = 4096
 HI_MSG = process_env_string(os.getenv("HI_MSG", "Добро пожаловать!"))
 ERR_MSG = process_env_string(os.getenv("ERR_MSG", "Извините, сейчас не могу ответить. Попробуйте позже."))
 
+
+user_locks = defaultdict(asyncio.Lock)
 
 async def call_ai(message: str, parent_message_id: str = ""):
     try:
@@ -92,17 +94,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_message = update.message.text
-    parent_message_id = context.user_data.get("last_message_id", "")
+    asyncio.create_task(process_message(update, context))
 
-    msg_id, ai_response = await call_ai(user_message, parent_message_id)
+async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    async with user_locks[chat_id]:
+        user_message = update.message.text
+        parent_message_id = context.user_data.get("last_message_id", "")
 
-    if ai_response:
-        context.user_data["last_message_id"] = msg_id
-        await safe_reply(update, ai_response)
-    else:
-        await safe_reply(update, ERR_MSG)
+        msg_id, ai_response = await call_ai(user_message, parent_message_id)
 
+        if ai_response:
+            context.user_data["last_message_id"] = msg_id
+            await safe_reply(update, ai_response)
+        else:
+            await safe_reply(update, ERR_MSG)
 
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
@@ -115,3 +121,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+  
