@@ -26,7 +26,7 @@ def process_env_string(s):
 
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-AI_TOKEN = os.getenv("AI_API_KEY")
+AI_TOKEN = os.getenv("AI_TOKEN")
 AGENT_ID = os.getenv("AGENT_ID")
 MAX_MSG_LEN = 4096
 HI_MSG = process_env_string(os.getenv("HI_MSG", "Добро пожаловать!"))
